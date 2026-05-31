@@ -81,14 +81,35 @@ export default function ReservationForm({
       number,
       nickname: nickname.trim(),
       contact_phone: contactPhone.trim(),
-      status: 'reserved',
+      status: 'pending',
       reservation_group_id: 'shared-group-uuid-placeholder',
     }));
+
+    const sortedNumbersText = sortedSelected.map((n) => String(n).padStart(2, '0')).join(', ');
+    const whatsappMessage =
+      `Golden Number Reservation%0A` +
+      `Name: ${encodeURIComponent(nickname.trim())}%0A` +
+      `Phone: ${encodeURIComponent(contactPhone.trim())}%0A` +
+      `Table: ${tableNumber}%0A` +
+      `Numbers: ${encodeURIComponent(sortedNumbersText)}%0A` +
+      `Total: $${totalPrice.toFixed(2)} USD%0A` +
+      `Status: Pending payment`;
+
+    const whatsappWindow = window.open('', '_blank');
 
     try {
       await onReserve(nickname, contactPhone);
       luxuryAudio.praiseSparkle();
+
+      if (whatsappWindow) {
+        whatsappWindow.location.href = `https://wa.me/96170126177?text=${whatsappMessage}`;
+      } else {
+        window.location.href = `https://wa.me/96170126177?text=${whatsappMessage}`;
+      }
     } catch (err: any) {
+      if (whatsappWindow) {
+        whatsappWindow.close();
+      }
       console.error('Reservation submit failed:', err);
       console.error('Selected numbers:', selectedNumbers);
       console.error('Nickname:', nickname);
