@@ -1,0 +1,46 @@
+﻿590: 
+591:                 {winnerResult && (
+592:                   <div className="bg-black border-2 border-gold p-4 text-center shadow-[0_0_22px_rgba(212,175,55,0.18)]">
+593:                     <p className="text-[10px] tracking-[0.35em] text-gold/70 uppercase font-sans font-extrabold">
+594:                       Winning Number
+595:                     </p>
+596: 
+597:                     <p className="text-5xl font-serif font-black text-transparent bg-clip-text bg-gradient-to-b from-gold-light to-gold my-3">
+598:                       #{String(winnerResult.number).padStart(2, '0')}
+599:                     </p>
+600: 
+601:                     <div className="space-y-1 text-xs font-sans">
+602:                       <p className="text-stone-400">
+603:                         Name: <span className="text-gold-light font-bold">{winnerResult.name || winnerResult.nickname || 'Unknown'}</span>
+604:                       </p>
+605:                       <p className="text-stone-400">
+606:                         Phone: <span className="text-gold-light font-bold">{winnerResult.phone || winnerResult.contact_phone || 'No phone'}</span>
+607:                       </p>
+608:                       <p className="text-stone-400">
+609:                         Status: <span className="text-gold-light font-bold uppercase">{winnerResult.status}</span>
+610:                       </p>
+611:                       <p className="text-stone-400">
+612:                         Table: <span className="text-gold-light font-bold">{winnerResult.table_number}</span>
+613:                       </p>
+614:                     </div>
+615: 
+616:                     <button
+617:                       type="button"
+618:                       onClick={(e) => {
+619:                         e.preventDefault();
+620:                         e.stopPropagation();
+621:                         handleSaveWinner();
+622:                       }}
+623:                       className="mt-4 w-full py-3 gold-gradient text-black text-[10px] font-sans font-extrabold uppercase tracking-widest transition-all cursor-pointer active:scale-95 border border-gold-light"
+624:                     >
+625:                       {isLoading ? 'SAVING WINNER...' : 'SAVE WINNER FOREVER'}
+626:                     </button>
+627:                   </div>
+628:                 )}
+629:               </div>
+630: 
+631:               {/* SECTIONS: STATS REPORTS & STACKED RESERVATION CARDS */}
+632:               <div className="border-t border-gold/20 pt-5">
+633:                 <AdminStats stats={stats} />
+634:               </div>
+635: 

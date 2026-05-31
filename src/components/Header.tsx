@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import { Crown } from 'lucide-react';
 
 interface HeaderProps {
@@ -5,38 +6,48 @@ interface HeaderProps {
   isAdminUnlocked: boolean;
 }
 
-export default function Header({ onAdminClick, isAdminUnlocked }: HeaderProps) {
+export default function Header({ onAdminClick }: HeaderProps) {
+  const [crownClicks, setCrownClicks] = useState(0);
+  const timerRef = useRef<number | null>(null);
+
+  const handleCrownClick = () => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+    }
+
+    const nextClicks = crownClicks + 1;
+    setCrownClicks(nextClicks);
+
+    if (nextClicks >= 5) {
+      setCrownClicks(0);
+      onAdminClick();
+      return;
+    }
+
+    timerRef.current = window.setTimeout(() => {
+      setCrownClicks(0);
+    }, 2500);
+  };
+
   return (
-    <header className="relative w-full flex flex-col items-center pt-8 pb-6 px-4">
-      {/* Hidden/Subtle Admin Trigger */}
-      <button
-        id="admin-trigger"
-        onClick={onAdminClick}
-        className="absolute top-4 right-4 bg-transparent text-gold/30 hover:text-gold transition-colors p-2 text-xs font-mono select-none"
-        title="Admin settings"
-      >
-        {isAdminUnlocked ? '[ADMIN ✓]' : '[ADMIN CODE]'}
-      </button>
+    <header className="relative text-center py-6 select-none">
+      <div className="flex flex-col items-center gap-2">
+        <button
+          type="button"
+          onClick={handleCrownClick}
+          aria-label="Golden Number Crown"
+          className="group p-2 rounded-full border border-transparent hover:border-gold/25 active:scale-95 transition-all cursor-pointer"
+        >
+          <Crown className="w-10 h-10 text-gold drop-shadow-[0_0_10px_rgba(212,175,55,0.45)] group-hover:text-gold-light transition-colors" />
+        </button>
 
-      {/* Luxury Brand Header */}
-      <div className="flex flex-col items-center select-none text-center">
-        {/* Crown Accent */}
-        <div className="text-gold mb-2 drop-shadow-[0_2px_10px_rgba(212,175,55,0.4)] animate-pulse">
-          <Crown className="w-9 h-9" strokeWidth={1.5} />
-        </div>
-
-        {/* Brand Title */}
-        <h1 className="text-4xl md:text-5xl font-serif tracking-widest text-transparent bg-clip-text bg-gradient-to-b from-gold-light via-gold to-gold font-extrabold uppercase drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
-          Golden Number
-        </h1>
-
-        {/* Subtitle Accent Lines */}
-        <div className="flex items-center gap-3 mt-2 w-full max-w-xs">
-          <span className="h-[1px] flex-1 bg-gradient-to-r from-transparent to-gold/50" />
-          <span className="text-[10px] md:text-xs font-sans tracking-[0.3em] text-gold-light/90 font-medium uppercase">
-            Forty-Two Chances to Win
-          </span>
-          <span className="h-[1px] flex-1 bg-gradient-to-l from-transparent to-gold/50" />
+        <div>
+          <h1 className="text-4xl md:text-5xl font-serif font-black tracking-[0.18em] text-transparent bg-clip-text bg-gradient-to-b from-gold-light via-gold to-gold-dark uppercase">
+            Golden Number
+          </h1>
+          <p className="mt-2 text-[10px] md:text-xs tracking-[0.35em] uppercase text-stone-400 font-sans">
+            Forty-two chances to win
+          </p>
         </div>
       </div>
     </header>

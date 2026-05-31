@@ -1,0 +1,233 @@
+﻿1: import React, { useState, useEffect } from 'react';
+2: import { User, Phone, CheckCircle, XCircle, X } from 'lucide-react';
+3: import { validateName, validatePhone } from '../lib/validators';
+4: import { Reservation } from '../lib/types';
+5: import { luxuryAudio } from '../lib/audio';
+6: 
+7: interface ReservationFormProps {
+8:   selectedNumbers: number[];
+9:   tableNumber: number;
+10:   browserToken: string;
+11:   tableReservations: Reservation[];
+12:   onReserve: (nickname: string, contactPhone: string) => Promise<void>;
+13:   isLoading: boolean;
+14:   isOpen: boolean;
+15:   onClose: () => void;
+16:   nickname: string;
+17:   setNickname: (val: string) => void;
+18:   contactPhone: string;
+19:   setContactPhone: (val: string) => void;
+20:   error: string;
+21:   setError: (val: string) => void;
+22:   success: string;
+23:   setSuccess: (val: string) => void;
+24: }
+25: 
+26: export default function ReservationForm({
+27:   selectedNumbers,
+28:   tableNumber,
+29:   browserToken,
+30:   tableReservations,
+31:   onReserve,
+32:   isLoading,
+33:   isOpen,
+34:   onClose,
+35:   nickname,
+36:   setNickname,
+37:   contactPhone,
+38:   setContactPhone,
+39:   error,
+40:   setError,
+41:   success,
+42:   setSuccess,
+43: }: ReservationFormProps) {
+44: 
+45:   // Reset error of modal on open/close
+46:   useEffect(() => {
+47:     if (isOpen) {
+48:       setError('');
+49:       setSuccess('');
+50:     }
+51:   }, [isOpen]);
+52: 
+53:   if (!isOpen) return null;
+54: 
+55:   const handleSubmit = async (e: React.FormEvent) => {
+56:     e.preventDefault();
+57:     setSuccess('');
+58:     setError('');
+59: 
+60:     if (selectedNumbers.length === 0) {
+61:       setError('Choose at least one lucky number on the grid first.');
+62:       return;
+63:     }
+64: 
+65:     // Name Validate
+66:     const nameVal = validateName(nickname);
+67:     if (!nameVal.isValid) {
+68:       setError(nameVal.error || 'Name is required.');
+69:       return;
+70:     }
+71: 
+72:     // Phone Validate
+73:     const phoneVal = validatePhone(contactPhone);
+74:     if (!phoneVal.isValid) {
+75:       setError(phoneVal.error || 'Phone is required.');
+76:       return;
+77:     }
+78: 
+79:     const rows = selectedNumbers.map((number) => ({
+80:       table_number: tableNumber,
+81:       number,
+82:       nickname: nickname.trim(),
+83:       contact_phone: contactPhone.trim(),
+84:       status: 'reserved',
+85:       reservation_group_id: 'shared-group-uuid-placeholder',
+86:     }));
+87: 
+88:     try {
+89:       await onReserve(nickname, contactPhone);
+90:       luxuryAudio.praiseSparkle();
+91:     } catch (err: any) {
+92:       console.error('Reservation submit failed:', err);
+93:       console.error('Selected numbers:', selectedNumbers);
+94:       console.error('Nickname:', nickname);
+95:       console.error('Contact phone:', contactPhone);
+96:       console.error('Reservation rows payload:', rows);
+97: 
+98:       setError('Reservation system needs an update. Please contact admin.');
+99:     }
+100:   };
+101: 
+102:   const sortedSelected = [...selectedNumbers].sort((a, b) => a - b);
+103:   const totalPrice = selectedNumbers.length * 3.00;
+104: 
+105:   return (
+106:     <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
+107:       <div className="w-full max-w-md bg-[#070605] border-4 border-gold p-1 shadow-[0_0_50px_rgba(212,175,55,0.45)] my-auto relative">
+108:         <div className="border border-gold/35 p-5">
+109:           {/* Close button */}
+110:           <button
+111:             onClick={onClose}
+112:             className="absolute top-4 right-4 text-gold/60 hover:text-gold transition-colors p-1 cursor-pointer"
+113:             title="Close"
+114:           >
+115:             <X className="w-5 h-5" />
+116:           </button>
+117: 
+118:           <h2 className="serif text-xl tracking-widest text-gold font-bold uppercase mb-4 text-center select-none">
+119:             RESERVATION DETAILS
+120:           </h2>
+121: 
+122:           {/* Selected Numbers Summary Board */}
+123:           <div className="flex flex-col items-center justify-center py-3 bg-[#0a0703] rounded-none border border-gold/30 mb-4 select-none">
+124:             <span className="text-[10px] tracking-wider text-gold/75 uppercase font-sans font-bold">
+125:               SELECTED LUCKY NUMBERS ({selectedNumbers.length})
+126:             </span>
+127:             <span className="text-lg md:text-xl font-serif font-bold text-gold-light mt-1.5 px-4 text-center leading-tight">
+128:               {sortedSelected.length > 0 ? sortedSelected.map((n) => String(n).padStart(2, '0')).join(', ') : '--'}
+129:             </span>
+130:             <span className="text-[10px] text-stone-500 font-mono mt-1 font-semibold">
+131:               Total Price: ${totalPrice.toFixed(2)} USD
+132:             </span>
+133:           </div>
+134: 
+135:           {success ? (
+136:             <div className="space-y-4 select-none animate-fade-in pt-2">
+137:               <div className="flex items-start gap-2.5 text-gold-light bg-[#0a0703] border border-gold/40 p-4">
+138:                 <CheckCircle className="w-5 h-5 shrink-0 text-gold-light mt-0.5" />
+139:                 <div className="text-xs space-y-1">
+140:                   <p className="font-bold text-gold uppercase">RESERVATION PLACED SUCCESSFULLY</p>
+141:                   <p className="text-stone-300 leading-normal">{success}</p>
+142:                 </div>
+143:               </div>
+144: 
+145:               <div className="bg-black/90 p-3.5 border border-gold/20 text-[10px] text-stone-400 leading-relaxed font-sans">
+146:                 <p className="font-bold text-gold uppercase mb-1">How to Complete Payment:</p>
+147:                 <p>Transfer $3.00 per number (${totalPrice.toFixed(2)} total) to the organizer. Once verified, your slot numbers will be officially confirmed with a Golden X.</p>
+148:               </div>
+149: 
+150:               <button
+151:                 onClick={onClose}
+152:                 className="w-full py-3 bg-gold hover:opacity-95 text-black font-sans tracking-widest font-extrabold uppercase transition-all duration-200 cursor-pointer text-xs"
+153:               >
+154:                 CLOSE BOARD
+155:               </button>
+156:             </div>
+157:           ) : (
+158:             /* Action Form */
+159:             <form onSubmit={handleSubmit} className="space-y-4">
+160:               <div>
+161:                 <label className="block text-[10px] tracking-widest text-gold/85 font-sans uppercase mb-1.5 font-bold">
+162:                   NICKNAME / NAME
+163:                 </label>
+164:                 <div className="relative">
+165:                   <span className="absolute inset-y-0 left-3 flex items-center text-gold/45">
+166:                     <User className="w-4 h-4" />
+167:                   </span>
+168:                   <input
+169:                     type="text"
+170:                     required
+171:                     value={nickname}
+172:                     onChange={(e) => setNickname(e.target.value)}
+173:                     placeholder="Alex G."
+174:                     className="w-full bg-[#0a0703] text-stone-200 text-sm pl-9 pr-4 py-2.5 rounded-none border border-gold focus:outline-2 focus:outline-gold-light placeholder-stone-600 transition-all font-sans"
+175:                     disabled={isLoading}
+176:                   />
+177:                 </div>
+178:               </div>
+179: 
+180:               <div>
+181:                 <label className="block text-[10px] tracking-widest text-gold/85 font-sans uppercase mb-1.5 font-bold">
+182:                   CONTACT PHONE
+183:                 </label>
+184:                 <div className="relative">
+185:                   <span className="absolute inset-y-0 left-3 flex items-center text-gold/45">
+186:                     <Phone className="w-4 h-4" />
+187:                   </span>
+188:                   <input
+189:                     type="text"
+190:                     required
+191:                     value={contactPhone}
+192:                     onChange={(e) => setContactPhone(e.target.value)}
+193:                     placeholder="+961 -- --- ---"
+194:                     className="w-full bg-[#0a0703] text-stone-200 text-sm pl-9 pr-4 py-2.5 rounded-none border border-gold focus:outline-2 focus:outline-gold-light placeholder-stone-600 transition-all font-sans"
+195:                     disabled={isLoading}
+196:                   />
+197:                 </div>
+198:                 <p className="text-[9px] text-[#8e8a84] font-sans mt-1">
+199:                   We use your contact details to verify transfers and raffle announcements.
+200:                 </p>
+201:               </div>
+202: 
+203:               {/* Messages Alert */}
+204:               {error && (
+205:                 <div className="flex items-start gap-2.5 bg-rose-950/40 border border-rose-800/60 text-rose-300 p-3 rounded-none text-xs select-none">
+206:                   <XCircle className="w-4 h-4 mt-0.5 shrink-0" />
+207:                   <span className="leading-snug">{error}</span>
+208:                 </div>
+209:               )}
+210: 
+211:               {/* Primary Action Button */}
+212:               <button
+213:                 type="submit"
+214:                 disabled={isLoading || selectedNumbers.length === 0}
+215:                 className={`
+216:                   w-full py-3.5 rounded-none text-xs font-sans tracking-widest font-extrabold uppercase transition-all duration-300 select-none cursor-pointer active:scale-[0.98]
+217:                   ${
+218:                     selectedNumbers.length === 0
+219:                       ? 'bg-[#0a0703] border border-[#332b1a] text-[#555] cursor-not-allowed'
+220:                       : 'gold-gradient text-black hover:opacity-90'
+221:                   }
+222:                 `}
+223:               >
+224:                 {isLoading ? 'RESERVING NUMBERS...' : `CONFIRM ${selectedNumbers.length} RESERVATION${selectedNumbers.length > 1 ? 'S' : ''}`}
+225:               </button>
+226:             </form>
+227:           )}
+228: 
+229:         </div>
+230:       </div>
+231:     </div>
+232:   );
+233: }

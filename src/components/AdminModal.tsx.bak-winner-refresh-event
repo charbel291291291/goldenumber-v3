@@ -44,7 +44,7 @@ export default function AdminModal({
   // Sync state date when table changes
   useEffect(() => {
     if (currentTable) {
-      setDrawDate(currentTable.draw_date || getNextDrawDate());
+      setDrawDate(currentTable.draw_date || '');
       setTargetTableInput(String(currentTable.table_number));
     }
   }, [currentTable]);
@@ -63,33 +63,6 @@ export default function AdminModal({
     } catch (err) {
       console.error('Stats fetch error:', err);
     }
-  };
-
-  const getNextDrawDate = () => {
-    const today = new Date();
-    const day = today.getDay();
-    const target = new Date(today);
-
-    let daysToAdd = 0;
-
-    if (day === 0) {
-      daysToAdd = 1;
-    } else if (day === 1) {
-      daysToAdd = 0;
-    } else if (day === 2) {
-      daysToAdd = 2;
-    } else if (day === 3) {
-      daysToAdd = 1;
-    } else if (day === 4) {
-      daysToAdd = 0;
-    } else if (day === 5) {
-      daysToAdd = 3;
-    } else if (day === 6) {
-      daysToAdd = 2;
-    }
-
-    target.setDate(today.getDate() + daysToAdd);
-    return target.toISOString().split('T')[0];
   };
 
   const clearMessages = () => {
@@ -135,8 +108,7 @@ export default function AdminModal({
 
     try {
       setIsLoading(true);
-      const formattedDate = drawDate || getNextDrawDate();
-      setDrawDate(formattedDate);
+      const formattedDate = drawDate ? drawDate : null;
       const success = await db.setTableDrawDate(tNum, formattedDate);
       if (success) {
         setAdminMsg({ text: `Draw date saved successfully for Table ${tNum}.` });
@@ -305,12 +277,11 @@ export default function AdminModal({
         winner_phone: winnerPhone,
         reservation_id: winnerResult.id || null,
         reservation_created_at: winnerResult.created_at || null,
-        draw_date: currentTable?.draw_date || getNextDrawDate(),
+        draw_date: currentTable?.draw_date || null,
       });
 
       if (res.success) {
         setAdminMsg({ text: `Winner #${winnerResult.number} saved forever.` });
-        window.dispatchEvent(new Event('winners-updated'));
         onRefreshData();
       } else {
         setAdminMsg({ text: res.error || 'Failed to save winner.', isError: true });
@@ -496,48 +467,20 @@ export default function AdminModal({
                     <label className="block text-[8px] tracking-wider text-stone-400 font-bold font-sans uppercase mb-1">
                       DRAW DATE
                     </label>
-                    <div className="space-y-2">
-                      <div className="flex gap-1">
-                        <input
-                          type="date"
-                          value={drawDate}
-                          onChange={(e) => setDrawDate(e.target.value)}
-                          className="flex-1 bg-black text-stone-200 border border-gold/40 text-[10px] md:text-xs py-1.5 px-2 rounded-none focus:outline-gold focus:border-gold font-mono"
-                        />
-                        <button
-                          onClick={handleSaveDrawDate}
-                          disabled={isLoading}
-                          className="gold-gradient text-black text-[9px] font-sans font-bold uppercase rounded-none px-2 tracking-wider transition-colors cursor-pointer"
-                        >
-                          SAVE
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setDrawDate(getNextDrawDate())}
-                          className="bg-black border border-gold/30 text-gold text-[8px] font-sans font-bold uppercase py-1.5 tracking-wider hover:bg-gold hover:text-black"
-                        >
-                          Auto
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setDrawDate(getNextWeekdayDate(1))}
-                          className="bg-black border border-gold/30 text-gold text-[8px] font-sans font-bold uppercase py-1.5 tracking-wider hover:bg-gold hover:text-black"
-                        >
-                          Monday
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setDrawDate(getNextWeekdayDate(4))}
-                          className="bg-black border border-gold/30 text-gold text-[8px] font-sans font-bold uppercase py-1.5 tracking-wider hover:bg-gold hover:text-black"
-                        >
-                          Thursday
-                        </button>
-                      </div>
+                    <div className="flex gap-1">
+                      <input
+                        type="date"
+                        value={drawDate}
+                        onChange={(e) => setDrawDate(e.target.value)}
+                        className="flex-1 bg-black text-stone-200 border border-gold/40 text-[10px] md:text-xs py-1.5 px-2 rounded-none focus:outline-gold focus:border-gold font-mono"
+                      />
+                      <button
+                        onClick={handleSaveDrawDate}
+                        disabled={isLoading}
+                        className="gold-gradient text-black text-[9px] font-sans font-bold uppercase rounded-none px-2 tracking-wider transition-colors cursor-pointer"
+                      >
+                        SAVE
+                      </button>
                     </div>
                   </div>
                 </div>

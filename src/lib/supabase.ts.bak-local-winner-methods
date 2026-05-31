@@ -423,37 +423,6 @@ class LocalDatabaseService {
       listeners.delete(callback);
     };
   }
-  public async getWinners(): Promise<Winner[]> {
-    try {
-      const saved = localStorage.getItem('golden_number_winners');
-      const winners = saved ? JSON.parse(saved) : [];
-      return winners.sort((a: Winner, b: Winner) =>
-        String(b.created_at || '').localeCompare(String(a.created_at || ''))
-      );
-    } catch {
-      return [];
-    }
-  }
-
-  public async saveWinner(winner: Omit<Winner, 'id' | 'created_at'>): Promise<{ success: boolean; error?: string }> {
-    try {
-      const saved = localStorage.getItem('golden_number_winners');
-      const winners = saved ? JSON.parse(saved) : [];
-
-      winners.unshift({
-        ...winner,
-        id: crypto.randomUUID ? crypto.randomUUID() : 'winner-' + Math.random().toString(36).slice(2),
-        created_at: new Date().toISOString(),
-      });
-
-      localStorage.setItem('golden_number_winners', JSON.stringify(winners));
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message || 'Local winner save failed.' };
-    }
-  }
-
-
 }
 
 export const localDb = new LocalDatabaseService();

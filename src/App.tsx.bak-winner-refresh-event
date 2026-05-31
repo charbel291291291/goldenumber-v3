@@ -100,18 +100,6 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    const handleWinnersUpdated = () => {
-      fetchWinners();
-    };
-
-    window.addEventListener('winners-updated', handleWinnersUpdated);
-
-    return () => {
-      window.removeEventListener('winners-updated', handleWinnersUpdated);
-    };
-  }, []);
-
   const fetchTables = async () => {
     try {
       const data = await db.getTables();
@@ -309,7 +297,7 @@ export default function App() {
                     Winner Hall
                   </h3>
                   <p className="text-[9px] text-stone-500 font-sans mt-1">
-                    Permanent public winners list. Draws every Monday and Thursday.
+                    Permanent public winners list.
                   </p>
                 </div>
               </div>
@@ -329,7 +317,7 @@ export default function App() {
 
                     const drawDate = winner.draw_date
                       ? new Date(winner.draw_date).toLocaleDateString()
-                      : 'Next Monday or Thursday';
+                      : 'No draw date';
 
                     return (
                       <div

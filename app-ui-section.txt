@@ -1,0 +1,141 @@
+﻿250:         {/* Inside border line for high fidelity depth */}
+251:         <div className="border border-gold/30 p-2 md:p-4 flex flex-col min-h-full">
+252:           
+253:           {success && (
+254:             <div className="w-full mb-4 bg-emerald-950/80 border border-emerald-800 text-emerald-300 rounded p-3 text-xs flex items-center justify-between gap-2 animate-fade-in select-none">
+255:               <span className="font-semibold">{success}</span>
+256:               <button onClick={() => setSuccess('')} className="text-emerald-400 hover:text-emerald-200 font-extrabold cursor-pointer px-1">âœ•</button>
+257:             </div>
+258:           )}
+259: 
+260:           {/* Main Title Header Section */}
+261:           <Header
+262:             onAdminClick={() => {
+263:               setIsAdminOpen(true);
+264:               fetchTables();
+265:             }}
+266:             isAdminUnlocked={isAdminUnlocked}
+267:           />
+268: 
+269:           {/* Table Selector Grid Column */}
+270:           <TableSelector
+271:             tables={tables}
+272:             selectedTableNumber={selectedTableNumber}
+273:             onTableSelect={(num) => setSelectedTableNumber(num)}
+274:           />
+275: 
+276:           {/* Quick Metrics Statistics Row */}
+277:           <StatsCards availableCount={availableCount} />
+278: 
+279:           {/* Responsive 42 Item Square Grid */}
+280:           <NumberGrid
+281:             selectedTable={currentTable}
+282:             reservations={tableReservations}
+283:             selectedNumbers={selectedNumbers}
+284:             onNumberSelect={handleToggleNumber}
+285:           />
+286: 
+287:           {/* Selected Numbers Sticky Summary Board */}
+288:           {selectedNumbers.length > 0 && (
+289:             <div className="w-full max-w-xl mx-auto px-4 mb-6 select-none animate-fade-in">
+290:               <div className="bg-[#0b0804] border-2 border-gold p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[0_0_20px_rgba(212,175,55,0.2)] rounded-none">
+291:                 <div className="text-center sm:text-left space-y-1">
+292:                   <p className="text-[10px] tracking-widest text-gold/60 uppercase font-sans font-extrabold pb-0.5">
+293:                     YOUR CURRENT SELECTION
+294:                   </p>
+295:                   <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1">
+296:                     <span className="text-stone-400 text-xs font-sans">Numbers chosen:</span>
+297:                     <span className="text-gold font-serif font-bold text-sm">
+298:                       {[...selectedNumbers]
+299:                         .sort((a, b) => a - b)
+300:                         .map((n) => String(n).padStart(2, '0'))
+301:                         .join(', ')}
+302:                     </span>
+303:                   </div>
+304:                   <p className="text-[9px] text-[#8e8a84] font-sans">
+305:                     Total Selected: <span className="text-gold font-bold">{selectedNumbers.length}</span> | Est. Cost: <span className="text-[#FFFDD0] font-bold">${(selectedNumbers.length * 3).toFixed(2)} USD</span>
+306:                   </p>
+307:                 </div>
+308: 
+309:                 <button
+310:                   onClick={() => setReservationModalOpen(true)}
+311:                   className="px-5 py-2.5 bg-gold hover:opacity-90 active:scale-95 text-black border border-transparent font-sans tracking-widest font-extrabold uppercase text-[11px] transition-all cursor-pointer shrink-0"
+312:                 >
+313:                   RESERVE SELECTED NUMBERS
+314:                 </button>
+315:               </div>
+316:             </div>
+317:           )}
+318: 
+319:           {/* User's Current Pending Booking Cancellations - Frame Board */}
+320:           {userPendingReservationsOnTable.length > 0 && (
+321:             <div className="w-full max-w-xl mx-auto px-4 mb-6 select-none border-t border-gold/15 pt-5">
+322:               <h3 className="text-[10px] tracking-widest text-gold-light font-bold uppercase mb-2.5 text-center font-sans">
+323:                 YOUR PENDING RESERVATIONS (TABLE {selectedTableNumber})
+324:               </h3>
+325:               <div className="space-y-2 max-h-[140px] overflow-y-auto pr-1">
+326:                 {userPendingReservationsOnTable.map((res) => (
+327:                   <div
+328:                     key={res.number}
+329:                     className="flex items-center justify-between p-2.5 bg-[#0a0703] border border-gold/20 rounded-none"
+330:                   >
+331:                     <div className="flex items-center gap-1.5 font-sans">
+332:                       <span className="text-sm font-serif font-bold text-gold">
+333:                         #{String(res.number).padStart(2, '0')}
+334:                       </span>
+335:                       <span className="text-stone-600 text-xs">|</span>
+336:                       <span className="text-stone-300 text-xs truncate max-w-[140px]">
+337:                         {res.name}
+338:                       </span>
+339:                     </div>
+340: 
+341:                     <button
+342:                       onClick={() => handleCancelReservation(res.number)}
+343:                       disabled={isLoading}
+344:                       className="text-[9px] hover:text-white text-rose-400 hover:bg-rose-950/20 border border-rose-500/30 font-bold px-2 py-1 rounded-none tracking-wide transition-colors uppercase cursor-pointer"
+345:                     >
+346:                       CANCEL RESERVATION
+347:                     </button>
+348:                   </div>
+349:                 ))}
+350:               </div>
+351:             </div>
+352:           )}
+353: 
+354:           {/* Elegant Footer Slogan */}
+355:           <footer className="mt-auto py-4 border-t border-gold/20 flex flex-col items-center select-none text-center gap-1">
+356:             <div className="flex items-center gap-1.5 text-gold/40 text-[10px] uppercase font-mono tracking-widest">
+357:               <ShieldCheck className="w-3.5 h-3.5" />
+358:               <span>SECURE MULTI-USER RAFFLE SYNC</span>
+359:             </div>
+360:             <p className="text-[9px] text-stone-600 font-sans tracking-wide">
+361:               GOLDEN NUMBER Â© 2026. ALL RIGHTS RESERVED.
+362:             </p>
+363:           </footer>
+364: 
+365:         </div>
+366:       </div>
+367: 
+368:       {/* Reservation Input Dialog Sheet */}
+369:       <ReservationForm
+370:         selectedNumbers={selectedNumbers}
+371:         tableNumber={selectedTableNumber}
+372:         browserToken={browserToken}
+373:         tableReservations={tableReservations}
+374:         onReserve={handleReserve}
+375:         isLoading={isLoading}
+376:         isOpen={reservationModalOpen}
+377:         onClose={() => setReservationModalOpen(false)}
+378:         nickname={nickname}
+379:         setNickname={setNickname}
+380:         contactPhone={contactPhone}
+381:         setContactPhone={setContactPhone}
+382:         error={error}
+383:         setError={setError}
+384:         success={success}
+385:         setSuccess={setSuccess}
+386:       />
+387: 
+388:       {/* Admin Panel Modal Sheet */}
+389:       <AdminModal
+390:         isOpen={isAdminOpen}

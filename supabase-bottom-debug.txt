@@ -1,0 +1,144 @@
+﻿820:     const cleanReservations = (reservations || []) as Reservation[];
+821:     const cleanTables = (tables || []) as Table[];
+822: 
+823:     const totalProfit = cleanLedger.reduce((sum, p) => sum + Number(p.amount), 0);
+824: 
+825:     // Since Monday
+826:     const getMondayOfCurrentWeek = () => {
+827:       const d = new Date();
+828:       const day = d.getDay();
+829:       const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+830:       const monday = new Date(d.setDate(diff));
+831:       monday.setHours(0, 0, 0, 0);
+832:       return monday;
+833:     };
+834:     const monday = getMondayOfCurrentWeek();
+835:     const thisWeekProfit = cleanLedger
+836:       .filter((p) => new Date(p.created_at) >= monday)
+837:       .reduce((sum, p) => sum + Number(p.amount), 0);
+838: 
+839:     const pendingReservations = cleanReservations.filter((r) => r.status === 'pending');
+840:     const confirmedReservations = cleanReservations.filter((r) => r.status === 'paid');
+841: 
+842:     const pendingCount = pendingReservations.length;
+843:     const pendingAmount = pendingReservations.length * 3;
+844:     const confirmedCount = confirmedReservations.length;
+845:     const confirmedAmount = confirmedReservations.length * 3;
+846: 
+847:     // Per table stats
+848:     const tableStatsList: { [key: number]: any } = {};
+849:     for (let tNum = 1; tNum <= 10; tNum++) {
+850:       const tRes = cleanReservations.filter((r) => r.table_number === tNum);
+851:       const tConf = tRes.filter((r) => r.status === 'paid');
+852:       const tPend = tRes.filter((r) => r.status === 'pending');
+853: 
+854:       const isClosed = tRes.length === 42 && tConf.length === 42;
+855: 
+856:       tableStatsList[tNum] = {
+857:         totalAmount: tRes.length * 3,
+858:         pendingAmount: tPend.length * 3,
+859:         confirmedAmount: tConf.length * 3,
+860:         isClosed,
+861:       };
+862:     }
+863: 
+864:     return {
+865:       totalProfit,
+866:       thisWeekProfit,
+867:       pendingAmount,
+868:       pendingCount,
+869:       confirmedAmount,
+870:       confirmedCount,
+871:       tableStats: tableStatsList,
+872:     };
+873:   }
+874: 
+875:   public subscribe(callback: TableCallback): () => void {
+876:     if (!supabase) return localDb.subscribe(callback);
+877: 
+878:     // Listen to changes on tables, reservations & profit_ledger in real time
+879:     const channel = supabase
+880:       .channel('table-reservation-realtime')
+881:       .on(
+882:         'postgres_changes',
+883:         { event: '*', schema: 'public', table: 'reservations' },
+884:         () => callback()
+885:       )
+886:       .on(
+887:         'postgres_changes',
+888:         { event: '*', schema: 'public', table: 'tables' },
+889:         () => callback()
+890:       )
+891:       .on(
+892:         'postgres_changes',
+893:         { event: '*', schema: 'public', table: 'profit_ledger' },
+894:         () => callback()
+895:       )
+896:       .subscribe();
+897: 
+898:     return () => {
+899:       supabase.removeChannel(channel);
+900:     };
+901:   }
+902:   public async getWinners(): Promise<Winner[]> {
+903:     if (!supabase) {
+904:       try {
+905:         const saved = localStorage.getItem('golden_number_winners');
+906:         const winners = saved ? JSON.parse(saved) : [];
+907:         return winners.sort((a: Winner, b: Winner) =>
+908:           String(b.created_at || '').localeCompare(String(a.created_at || ''))
+909:         );
+910:       } catch {
+911:         return [];
+912:       }
+913:     }
+914: 
+915:     const { data, error } = await supabase
+916:       .from('winners')
+917:       .select('*')
+918:       .order('created_at', { ascending: false });
+919: 
+920:     if (error) {
+921:       console.error('Supabase getWinners error:', error);
+922:       return [];
+923:     }
+924: 
+925:     return (data || []) as Winner[];
+926:   }
+927: 
+928:   public async saveWinner(winner: Omit<Winner, 'id' | 'created_at'>): Promise<{ success: boolean; error?: string }> {
+929:     if (!supabase) {
+930:       try {
+931:         const saved = localStorage.getItem('golden_number_winners');
+932:         const winners = saved ? JSON.parse(saved) : [];
+933:         winners.unshift({
+934:           ...winner,
+935:           id: crypto.randomUUID ? crypto.randomUUID() : 'winner-' + Math.random().toString(36).slice(2),
+936:           created_at: new Date().toISOString(),
+937:         });
+938:         localStorage.setItem('golden_number_winners', JSON.stringify(winners));
+939:         return { success: true };
+940:       } catch (err: any) {
+941:         return { success: false, error: err.message || 'Local winner save failed.' };
+942:       }
+943:     }
+944: 
+945:     const { error } = await supabase
+946:       .from('winners')
+947:       .insert(winner);
+948: 
+949:     if (error) {
+950:       console.error('Supabase saveWinner error:', error);
+951:       return { success: false, error: error.message };
+952:     }
+953: 
+954:     return { success: true };
+955:   }
+956: 
+957: 
+958: }
+959: 
+960: export const db = isRealSupabaseConfigured
+961:   ? new SupabaseDatabaseService()
+962:   : localDb;
+963: 

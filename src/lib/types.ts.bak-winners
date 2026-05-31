@@ -50,16 +50,3 @@ export interface AppStats {
     };
   };
 }
-
-
-export interface Winner {
-  id?: string;
-  table_number: number;
-  winning_number: number;
-  winner_name: string;
-  winner_phone?: string | null;
-  reservation_id?: string | null;
-  reservation_created_at?: string | null;
-  draw_date?: string | null;
-  created_at?: string;
-}

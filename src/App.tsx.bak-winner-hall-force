@@ -1,8 +1,8 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { WifiOff, ShieldCheck, Trophy } from 'lucide-react';
+import { WifiOff, ShieldCheck } from 'lucide-react';
 import { db } from './lib/supabase';
 import { getBrowserToken } from './lib/browserToken';
-import { Table, Reservation, Winner } from './lib/types';
+import { Table, Reservation } from './lib/types';
 
 // Component imports
 import Header from './components/Header';
@@ -19,7 +19,6 @@ export default function App() {
   const [tables, setTables] = useState<Table[]>([]);
   const [selectedTableNumber, setSelectedTableNumber] = useState<number>(1);
   const [tableReservations, setTableReservations] = useState<Reservation[]>([]);
-  const [winners, setWinners] = useState<Winner[]>([]);
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
 
   // Connection and modal states
@@ -82,7 +81,6 @@ export default function App() {
     // Whenever anything updates on reservations/tables, refresh both lists.
     const unsubscribe = db.subscribe(() => {
       fetchTables();
-      fetchWinners();
       fetchReservations(selectedTableNumber);
     });
 
@@ -90,27 +88,6 @@ export default function App() {
       unsubscribe();
     };
   }, [selectedTableNumber]);
-
-  const fetchWinners = async () => {
-    try {
-      const data = await db.getWinners();
-      setWinners(data);
-    } catch (err) {
-      console.error('Failed to load winners:', err);
-    }
-  };
-
-  useEffect(() => {
-    const handleWinnersUpdated = () => {
-      fetchWinners();
-    };
-
-    window.addEventListener('winners-updated', handleWinnersUpdated);
-
-    return () => {
-      window.removeEventListener('winners-updated', handleWinnersUpdated);
-    };
-  }, []);
 
   const fetchTables = async () => {
     try {
@@ -298,68 +275,6 @@ export default function App() {
 
           {/* Quick Metrics Statistics Row */}
           <StatsCards availableCount={availableCount} />
-
-          {/* Winner Hall */}
-          <div className="w-full max-w-xl mx-auto px-4 mb-6 select-none">
-            <div className="bg-[#050403] border-2 border-gold/50 p-4 rounded-none shadow-[0_0_24px_rgba(212,175,55,0.16)]">
-              <div className="flex items-center gap-2 border-b border-gold/20 pb-2 mb-3">
-                <Trophy className="w-4 h-4 text-gold" />
-                <div>
-                  <h3 className="text-[10px] tracking-widest text-gold font-sans font-extrabold uppercase">
-                    Winner Hall
-                  </h3>
-                  <p className="text-[9px] text-stone-500 font-sans mt-1">
-                    Permanent public winners list. Draws every Monday and Thursday.
-                  </p>
-                </div>
-              </div>
-
-              {winners.length === 0 ? (
-                <div className="py-4 text-center border border-dashed border-gold/15 bg-black/30">
-                  <p className="text-xs text-stone-500 font-sans">
-                    No winners saved yet.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3 max-h-[240px] overflow-y-auto pr-1">
-                  {winners.map((winner) => {
-                    const savedDate = winner.created_at
-                      ? new Date(winner.created_at).toLocaleDateString()
-                      : 'No date';
-
-                    const drawDate = winner.draw_date
-                      ? new Date(winner.draw_date).toLocaleDateString()
-                      : 'Next Monday or Thursday';
-
-                    return (
-                      <div
-                        key={winner.id || `${winner.table_number}-${winner.winning_number}-${savedDate}`}
-                        className="bg-black/70 border border-gold/25 p-4 text-center shadow-[inset_0_0_18px_rgba(212,175,55,0.04)]"
-                      >
-                        <p className="text-[9px] tracking-[0.35em] text-gold/70 uppercase font-sans font-extrabold">
-                          Winning Number
-                        </p>
-
-                        <p className="text-4xl font-serif font-black text-transparent bg-clip-text bg-gradient-to-b from-gold-light to-gold my-2">
-                          #{String(winner.winning_number).padStart(2, '0')}
-                        </p>
-
-                        <p className="text-sm text-gold-light font-sans font-extrabold uppercase">
-                          {winner.winner_name}
-                        </p>
-
-                        <div className="grid grid-cols-2 gap-2 mt-3 text-[10px] font-mono text-stone-500">
-                          <p>Table: <span className="text-stone-300">{winner.table_number}</span></p>
-                          <p>Draw: <span className="text-stone-300">{drawDate}</span></p>
-                          <p className="col-span-2">Saved: <span className="text-stone-300">{savedDate}</span></p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
           {/* Responsive 42 Item Square Grid */}
           <NumberGrid
             selectedTable={currentTable}

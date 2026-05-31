@@ -1,0 +1,71 @@
+﻿640:       }
+641:       return { success: false, error: errorMsg };
+642:     }
+643: 
+644:     return { success: true };
+645:   }
+646: 
+647:   public async cancelReservation(
+648:     tableNumber: number,
+649:     num: number,
+650:     browserToken: string
+651:   ): Promise<{ success: boolean; error?: string }> {
+652:     if (!supabase) {
+653:       return localDb.cancelReservation(tableNumber, num, browserToken);
+654:     }
+655: 
+656:     const { data, error } = await supabase
+657:       .from('reservations')
+658:       .select('*')
+659:       .eq('table_number', tableNumber)
+660:       .eq('number', num)
+661:       .single();
+662: 
+663:     if (error || !data) {
+664:       return { success: false, error: 'Reservation not found.' };
+665:     }
+666: 
+667:     const res = data as Reservation;
+668:     if (res.status === 'paid') {
+669:       return { success: false, error: 'Paid reservations cannot be cancelled.' };
+670:     }
+671: 
+672:     if (res.browser_token !== browserToken) {
+673:       return { success: false, error: 'You can only cancel your own pending reservations.' };
+674:     }
+675: 
+676:     const { error: delError } = await supabase
+677:       .from('reservations')
+678:       .delete()
+679:       .eq('table_number', tableNumber)
+680:       .eq('number', num);
+681: 
+682:     if (delError) {
+683:       return { success: false, error: delError.message };
+684:     }
+685: 
+686:     return { success: true };
+687:   }
+688: 
+689:   public async verifyAdminPin(pin: string): Promise<boolean> {
+690:     // For local dev and easy setup, check PIN via RPC or Edge Functions.
+691:     // If not set up, fall back to comparing pin to ENV VITE_ADMIN_PIN.
+692:     if (!supabase) return pin === adminPinDev;
+693:     
+694:     try {
+695:       const { data, error } = await supabase.functions.invoke('verify-admin-pin', {
+696:         body: { pin },
+697:       });
+698:       if (!error && data && typeof data.valid === 'boolean') {
+699:         return data.valid;
+700:       }
+701:     } catch {
+702:       // Fallback
+703:     }
+704:     return pin === adminPinDev;
+705:   }
+706: 
+707:   public async setTableStatus(tableNumber: number, isOpen: boolean): Promise<boolean> {
+708:     if (!supabase) return localDb.setTableStatus(tableNumber, isOpen);
+709:     const { error } = await supabase
+710:       .from('tables')
