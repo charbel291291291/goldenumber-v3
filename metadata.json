@@ -1,0 +1,6 @@
+{
+  "name": "Golden Number",
+  "description": "A premium black and gold raffle/table reservation PWA with real-time updates.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,563 @@
+import React, { useState, useEffect } from 'react';
+import { X, Calendar, Edit3, Trash2, Check, Lock, Unlock, LogOut, Terminal } from 'lucide-react';
+import { db } from '../lib/supabase';
+import { Table, Reservation, AppStats } from '../lib/types';
+import AdminStats from './AdminStats';
+import AdminReservationList from './AdminReservationList';
+import { luxuryAudio } from '../lib/audio';
+
+interface AdminModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  selectedTableNumber: number;
+  tableReservations: Reservation[];
+  currentTable: Table | null;
+  onRefreshData: () => void;
+}
+
+export default function AdminModal({
+  isOpen,
+  onClose,
+  selectedTableNumber,
+  tableReservations,
+  currentTable,
+  onRefreshData,
+}: AdminModalProps) {
+  // Authentication states
+  const [pin, setPin] = useState('');
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  // Administrative action inputs
+  const [drawDate, setDrawDate] = useState('');
+  const [targetTableInput, setTargetTableInput] = useState(String(selectedTableNumber));
+  const [targetNumberInput, setTargetNumberInput] = useState('');
+  const [resetNumberInput, setResetNumberInput] = useState('');
+
+  // Stats and list loader states
+  const [stats, setStats] = useState<AppStats | null>(null);
+  const [adminMsg, setAdminMsg] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Sync state date when table changes
+  useEffect(() => {
+    if (currentTable) {
+      setDrawDate(currentTable.draw_date || '');
+      setTargetTableInput(String(currentTable.table_number));
+    }
+  }, [currentTable]);
+
+  // Load stats when admin is opened/unlocked
+  useEffect(() => {
+    if (isUnlocked && isOpen) {
+      fetchAdminStats();
+    }
+  }, [isUnlocked, isOpen, tableReservations]);
+
+  const fetchAdminStats = async () => {
+    try {
+      const data = await db.getStats();
+      setStats(data);
+    } catch (err) {
+      console.error('Stats fetch error:', err);
+    }
+  };
+
+  const clearMessages = () => {
+    setAdminMsg(null);
+  };
+
+  // 1. PIN authentication
+  const handleUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinError(null);
+    setIsLoading(true);
+
+    try {
+      const valid = await db.verifyAdminPin(pin);
+      if (valid) {
+        setIsUnlocked(true);
+        setPin('');
+        setAdminMsg({ text: 'Admin unlocked.' });
+      } else {
+        setPinError('Invalid PIN code.');
+      }
+    } catch {
+      setPinError('Unable to authenticate PIN.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    setIsUnlocked(false);
+    setPinError(null);
+    setAdminMsg(null);
+  };
+
+  // 2. Save Draw Date code
+  const handleSaveDrawDate = async () => {
+    clearMessages();
+    const tNum = parseInt(targetTableInput);
+    if (isNaN(tNum) || tNum < 1 || tNum > 10) {
+      setAdminMsg({ text: 'Valid table number (1-10) is required.', isError: true });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const formattedDate = drawDate ? drawDate : null;
+      const success = await db.setTableDrawDate(tNum, formattedDate);
+      if (success) {
+        setAdminMsg({ text: `Draw date saved successfully for Table ${tNum}.` });
+        onRefreshData();
+      } else {
+        setAdminMsg({ text: 'Failed to update draw date.', isError: true });
+      }
+    } catch (err: any) {
+      setAdminMsg({ text: err.message || 'Error saving draw date.', isError: true });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 3. Open or Lock table code
+  const handleSetTableLock = async (isOpenState: boolean) => {
+    clearMessages();
+    const tNum = parseInt(targetTableInput);
+    if (isNaN(tNum) || tNum < 1 || tNum > 10) {
+      setAdminMsg({ text: 'Valid table number (1-10) is required.', isError: true });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const success = await db.setTableStatus(tNum, isOpenState);
+      if (success) {
+        setAdminMsg({ text: `Table ${tNum} is now ${isOpenState ? 'OPEN' : 'LOCKED'}.` });
+        onRefreshData();
+      } else {
+        setAdminMsg({ text: `Failed to set Table ${tNum} lock status.`, isError: true });
+      }
+    } catch (err: any) {
+      setAdminMsg({ text: err.message || 'Error updating table status.', isError: true });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 4. Confirm Paid Number action
+  const handleConfirmPayment = async () => {
+    clearMessages();
+    const cellNum = parseInt(targetNumberInput);
+    if (isNaN(cellNum) || cellNum < 1 || cellNum > 42) {
+      setAdminMsg({ text: 'Valid number (1-42) is required to confirm.', isError: true });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const res = await db.confirmPayment(selectedTableNumber, cellNum);
+      if (res.success) {
+        luxuryAudio.praiseGrandBell();
+        setAdminMsg({ text: `Number ${cellNum} payment confirmed inside Table ${selectedTableNumber}.` });
+        setTargetNumberInput('');
+        onRefreshData();
+      } else {
+        setAdminMsg({ text: res.error || 'Failed to confirm payment.', isError: true });
+      }
+    } catch (err: any) {
+      setAdminMsg({ text: err.message || 'Error confirming payment.', isError: true });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 5. Reset one Number action with prompt double-checks
+  const handleResetNumber = async () => {
+    clearMessages();
+    const cellNum = parseInt(resetNumberInput);
+    if (isNaN(cellNum) || cellNum < 1 || cellNum > 42) {
+      setAdminMsg({ text: 'Valid number (1-42) is required to reset.', isError: true });
+      return;
+    }
+
+    const conf = window.confirm(`Are you sure you want to reset and clear slot #${cellNum} entirely?`);
+    if (!conf) return;
+
+    try {
+      setIsLoading(true);
+      const res = await db.resetNumber(selectedTableNumber, cellNum);
+      if (res.success) {
+        setAdminMsg({ text: `Number ${cellNum} reset successfully.` });
+        setResetNumberInput('');
+        onRefreshData();
+      } else {
+        setAdminMsg({ text: res.error || 'Failed to reset number.', isError: true });
+      }
+    } catch (err: any) {
+      setAdminMsg({ text: err.message || 'Error resetting number.', isError: true });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 6. Danger Area Clear All Numbers action with literal verification check
+  const handleClearAllNumbers = async () => {
+    clearMessages();
+    const response = window.prompt(
+      `DANGER: This clears ALL active reservations from Table ${selectedTableNumber}!\nProfit history is kept.\nTo proceed, type exactly "CLEAR" below:`
+    );
+
+    if (response !== 'CLEAR') {
+      setAdminMsg({ text: 'Clear action cancelled. Verification text mismatched.', isError: true });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const success = await db.clearAllNumbers(selectedTableNumber);
+      if (success) {
+        setAdminMsg({ text: `All numbers for Table ${selectedTableNumber} have been cleared.` });
+        onRefreshData();
+      } else {
+        setAdminMsg({ text: 'Failed to clear all numbers.', isError: true });
+      }
+    } catch (err: any) {
+      setAdminMsg({ text: err.message || 'Error clearing numbers.', isError: true });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 7. Export current table reservations to CSV
+  const handleExportCSV = () => {
+    if (tableReservations.length === 0) {
+      setAdminMsg({ text: `No reservations to export for Table ${selectedTableNumber}.`, isError: true });
+      return;
+    }
+
+    try {
+      // Sort by chosen table slot number
+      const sortedResult = [...tableReservations].sort((a, b) => a.number - b.number);
+      const headers = ['Table Number', 'Slot Number', 'Name', 'Phone', 'Status', 'Price Paid ($)', 'Reserved At', 'Paid At'];
+      
+      const rows = sortedResult.map(res => [
+        res.table_number,
+        res.number,
+        res.name,
+        res.phone || '',
+        res.status.toUpperCase(),
+        res.price,
+        res.created_at ? new Date(res.created_at).toLocaleString() : '',
+        res.paid_at ? new Date(res.paid_at).toLocaleString() : ''
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => 
+          row.map(cell => {
+            const str = String(cell);
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+              return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+          }).join(',')
+        )
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `table_${selectedTableNumber}_reservations_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      setAdminMsg({ text: `Exported ${tableReservations.length} reservations from Table ${selectedTableNumber} to CSV!` });
+    } catch (err: any) {
+      setAdminMsg({ text: err.message || 'Error exporting CSV.', isError: true });
+    }
+  };
+
+  // Render logic
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <div className="w-full max-w-xl bg-[#050403] border-4 border-gold rounded-none shadow-[0_10px_50px_rgba(212,175,55,0.25)] flex flex-col max-h-[90vh] overflow-hidden custom-shadow">
+        
+        {/* Header Ribbon */}
+        <div className="flex items-center justify-between p-4 border-b border-gold/20 bg-[#070605]">
+          <div className="flex items-center gap-2 select-none">
+            <Terminal className="w-4 h-4 text-gold" />
+            <h3 className="text-sm font-sans tracking-widest text-transparent bg-clip-text bg-gradient-to-b from-gold-light to-gold font-extrabold uppercase">
+              {isUnlocked ? 'ADMIN PANEL' : 'ADMIN ACCESS'}
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 text-stone-400 hover:text-gold hover:bg-[#0a0703] border border-transparent hover:border-gold/30 rounded-none transition-all cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Scrollable Modal Content */}
+        <div className="p-5 overflow-y-auto space-y-6 flex-1">
+          
+          {/* Locked PIN Overlay / Form */}
+          {!isUnlocked ? (
+            <form onSubmit={handleUnlock} className="space-y-4 max-w-sm mx-auto py-8">
+              <div className="text-center mb-6">
+                <div className="inline-block p-3 rounded-none bg-gold/10 text-gold mb-2 border border-gold/30">
+                  <Lock className="w-8 h-8" />
+                </div>
+                <p className="text-xs text-stone-400 leading-relaxed font-sans uppercase tracking-[0.2em]">
+                  Pin Code Required
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[10px] tracking-wider text-stone-400 font-sans uppercase mb-1.5 text-center font-bold">
+                  PIN CODE
+                </label>
+                <input
+                  type="password"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  placeholder="••••"
+                  className="w-full bg-[#0a0703] text-center text-xl font-serif tracking-[1em] text-gold-light py-3 rounded-none border border-gold focus:outline-2 focus:outline-gold-light placeholder-stone-700"
+                  disabled={isLoading}
+                  autoFocus
+                />
+              </div>
+
+              {pinError && (
+                <p className="text-xs text-rose-400 font-medium text-center font-sans">
+                  {pinError}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-3 gold-gradient text-black font-sans font-extrabold tracking-widest text-sm uppercase rounded-none shadow-[0_4px_12px_rgba(212,175,55,0.2)] transition-all cursor-pointer active:scale-98"
+              >
+                {isLoading ? 'VERIFYING...' : 'OPEN ADMIN'}
+              </button>
+            </form>
+          ) : (
+            /* Unlocked View content */
+            <div className="space-y-6">
+              
+              {/* Unlocked feedback banner & clear message alert */}
+              {adminMsg && (
+                <div
+                  className={`p-3.5 rounded-none border text-xs flex justify-between items-start select-none
+                    ${
+                      adminMsg.isError
+                        ? 'bg-rose-950/40 border-rose-800 text-rose-300'
+                        : 'bg-[#0a0703]/80 border-gold/50 text-gold-light'
+                    }
+                  `}
+                >
+                  <p className="font-sans leading-relaxed">{adminMsg.text}</p>
+                  <button
+                    onClick={clearMessages}
+                    className="text-[10px] hover:underline opacity-80 uppercase cursor-pointer"
+                  >
+                    dismiss
+                  </button>
+                </div>
+              )}
+
+              {/* SECTION: DRAW DATE DATE INPUT & TABLE TOGGLES */}
+              <div className="bg-[#070605] p-4 border border-gold/30 rounded-none space-y-4">
+                <h4 className="text-[10px] tracking-widest text-gold font-extrabold uppercase select-none pb-2 border-b border-gold/20 flex items-center justify-between">
+                  <span>MANAGE TABLES & SEASONS</span>
+                  <span className="text-stone-500 font-normal font-mono uppercase">TARGET TABLE {targetTableInput}</span>
+                </h4>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Select Table to Edit */}
+                  <div>
+                    <label className="block text-[8px] tracking-wider text-stone-400 font-bold font-sans uppercase mb-1">
+                      TABLE NUMBER
+                    </label>
+                    <select
+                      value={targetTableInput}
+                      onChange={(e) => setTargetTableInput(e.target.value)}
+                      className="w-full bg-black border border-gold/40 text-stone-300 text-xs py-2 px-2.5 rounded-none focus:outline-gold focus:border-gold"
+                    >
+                      {Array.from({ length: 10 }, (_, i) => (
+                        <option key={i + 1} value={i + 1}>
+                          Table {i + 1}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Draw date setter */}
+                  <div>
+                    <label className="block text-[8px] tracking-wider text-stone-400 font-bold font-sans uppercase mb-1">
+                      DRAW DATE
+                    </label>
+                    <div className="flex gap-1">
+                      <input
+                        type="date"
+                        value={drawDate}
+                        onChange={(e) => setDrawDate(e.target.value)}
+                        className="flex-1 bg-black text-stone-200 border border-gold/40 text-[10px] md:text-xs py-1.5 px-2 rounded-none focus:outline-gold focus:border-gold font-mono"
+                      />
+                      <button
+                        onClick={handleSaveDrawDate}
+                        disabled={isLoading}
+                        className="gold-gradient text-black text-[9px] font-sans font-bold uppercase rounded-none px-2 tracking-wider transition-colors cursor-pointer"
+                      >
+                        SAVE
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Open/Lock Actions */}
+                <div className="flex items-center gap-2.5 pt-2">
+                  <button
+                    onClick={() => handleSetTableLock(true)}
+                    disabled={isLoading}
+                    className="flex-1 py-2.5 bg-black border border-gold/30 hover:border-gold hover:text-white text-gold-light font-sans text-xs tracking-wider font-extrabold uppercase rounded-none transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Unlock className="w-3.5 h-3.5 text-gold" />
+                    OPEN TABLE
+                  </button>
+
+                  <button
+                    onClick={() => handleSetTableLock(false)}
+                    disabled={isLoading}
+                    className="flex-1 py-2.5 bg-stone-900 border border-stone-850 hover:bg-rose-950 hover:text-white text-stone-400 font-sans text-xs tracking-wider font-bold uppercase rounded-none transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-stone-500" />
+                    LOCK TABLE
+                  </button>
+                </div>
+              </div>
+
+              {/* SECTION: ADMIN CONFIRMATIONS & SLOTS EDITS */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* Confirm Paid Number Card */}
+                <div className="bg-[#070605] p-4 border border-gold/30 rounded-none">
+                  <h4 className="text-[10px] tracking-widest text-gold font-extrabold uppercase mb-2 select-none">
+                    CONFIRM PAID NUMBER
+                  </h4>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="42"
+                      value={targetNumberInput}
+                      onChange={(e) => setTargetNumberInput(e.target.value)}
+                      placeholder="e.g. 13"
+                      className="w-20 bg-black text-stone-200 text-center rounded-none border border-gold/40 py-1 px-1.5 text-xs focus:outline-gold focus:border-gold"
+                    />
+                    <button
+                      onClick={handleConfirmPayment}
+                      disabled={isLoading}
+                      className="flex-1 gold-gradient text-black text-[10px] font-sans font-extrabold tracking-wide uppercase px-2 py-2 rounded-none transition-all cursor-pointer"
+                    >
+                      CONFIRM PAYMENT
+                    </button>
+                  </div>
+                </div>
+
+                {/* Reset Single Number Card */}
+                <div className="bg-[#070605] p-4 border border-gold/20 rounded-none">
+                  <h4 className="text-[10px] tracking-widest text-gold font-extrabold uppercase mb-2 select-none">
+                    RESET ONE NUMBER
+                  </h4>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="42"
+                      value={resetNumberInput}
+                      onChange={(e) => setResetNumberInput(e.target.value)}
+                      placeholder="e.g. 05"
+                      className="w-20 bg-black text-stone-200 text-center rounded-none border border-gold/40 py-1 px-1.5 text-xs focus:outline-rose-500 focus:border-rose-500"
+                    />
+                    <button
+                      onClick={handleResetNumber}
+                      disabled={isLoading}
+                      className="flex-1 bg-black border border-gold/30 hover:bg-rose-950 text-rose-400 hover:text-white text-[10px] font-sans font-bold tracking-wide uppercase px-2 py-2 rounded-none transition-colors cursor-pointer"
+                    >
+                      RESET NUMBER
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTIONS: STATS REPORTS & STACKED RESERVATION CARDS */}
+              <div className="border-t border-gold/20 pt-5">
+                <AdminStats stats={stats} />
+              </div>
+
+              <div className="border-t border-gold/20 pt-5">
+                <AdminReservationList
+                  reservations={tableReservations}
+                  onConfirm={async (num) => {
+                    setTargetNumberInput(String(num));
+                    await db.confirmPayment(selectedTableNumber, num);
+                    luxuryAudio.praiseGrandBell();
+                    setTargetNumberInput('');
+                    setAdminMsg({ text: `Number ${num} payment verified successfully!` });
+                    onRefreshData();
+                  }}
+                  onReset={async (num) => {
+                    const confirmReset = window.confirm(`Reset slot #${num} inside Table ${selectedTableNumber}?`);
+                    if (confirmReset) {
+                      await db.resetNumber(selectedTableNumber, num);
+                      setAdminMsg({ text: `Number ${num} reset to vacant!` });
+                      onRefreshData();
+                    }
+                  }}
+                  onExportCSV={handleExportCSV}
+                />
+              </div>
+
+              {/* EXTRA: DANGER ZONE RESET BUTTON */}
+              <div className="pt-4 border-t border-rose-950/40 flex flex-col md:flex-row items-center justify-between gap-3 bg-rose-950/10 p-3 rounded-none border border-rose-900/15">
+                <div className="text-center md:text-left select-none">
+                  <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest font-sans">DANGER ZONE</p>
+                  <p className="text-[8px] md:text-[9px] text-stone-500 leading-none">Flush active reservations for Table {selectedTableNumber}</p>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleLogout}
+                    className="px-3 py-1.5 bg-black border border-gold/30 text-gold hover:text-gold-light text-xs font-mono rounded-none flex items-center gap-1.5 transition-all select-none cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    LOCK
+                  </button>
+
+                  <button
+                    onClick={handleClearAllNumbers}
+                    className="px-3.5 py-1.5 bg-rose-700 hover:bg-rose-600 text-white text-xs font-sans font-extrabold uppercase tracking-wide rounded-none flex items-center gap-1.5 transition-all select-none cursor-pointer border border-rose-600"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    CLEAR ALL NUMBERS
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}

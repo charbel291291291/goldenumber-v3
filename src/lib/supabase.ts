@@ -1,0 +1,907 @@
+﻿import { createClient } from '@supabase/supabase-js';
+import { Table, Reservation, ProfitEntry, AppStats } from './types';
+
+// Environment variables from Vite
+const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
+const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
+const adminPinDev =
+  (import.meta as any).env.ADMIN_PIN ||
+  (import.meta as any).env.VITE_ADMIN_PIN ||
+  '1234';
+
+// Check if Supabase keys exist and are not placeholders
+const isRealSupabaseConfigured =
+  supabaseUrl &&
+  supabaseAnonKey &&
+  supabaseUrl !== 'https://your-project-ref.supabase.co' &&
+  supabaseUrl.trim() !== '' &&
+  supabaseAnonKey !== 'your-anon-key' &&
+  supabaseAnonKey.trim() !== '';
+
+export const supabase = isRealSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
+
+// Realtime listeners array for our mock simulator
+type TableCallback = () => void;
+const listeners: Set<TableCallback> = new Set();
+
+function triggerRealtimeUpdate() {
+  listeners.forEach((callback) => callback());
+}
+
+/**
+ * =========================================================================
+ * MOCK DATABASE CONTROLLER (Fallback for LocalStorage Execution)
+ * =========================================================================
+ */
+class LocalDatabaseService {
+  private getTablesData(): Table[] {
+    const key = 'golden_number_tables';
+    const raw = localStorage.getItem(key);
+    if (!raw) {
+      // Initialize 10 tables
+      const initial: Table[] = Array.from({ length: 10 }, (_, i) => ({
+        id: `table-uuid-${i + 1}`,
+        table_number: i + 1,
+        is_open: i === 0, // Only table 1 opened by default
+        draw_date: null,
+        created_at: new Date().toISOString(),
+      }));
+      localStorage.setItem(key, JSON.stringify(initial));
+      return initial;
+    }
+    return JSON.parse(raw);
+  }
+
+  private saveTablesData(data: Table[]) {
+    localStorage.setItem('golden_number_tables', JSON.stringify(data));
+    triggerRealtimeUpdate();
+  }
+
+  private getReservationsData(): Reservation[] {
+    const key = 'golden_number_reservations';
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  private saveReservationsData(data: Reservation[]) {
+    localStorage.setItem('golden_number_reservations', JSON.stringify(data));
+    triggerRealtimeUpdate();
+  }
+
+  private getProfitData(): ProfitEntry[] {
+    const key = 'golden_number_profit';
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  private saveProfitData(data: ProfitEntry[]) {
+    localStorage.setItem('golden_number_profit', JSON.stringify(data));
+    triggerRealtimeUpdate();
+  }
+
+  // --- Public DB Service Interface ---
+
+  public async getTables(): Promise<Table[]> {
+    return this.getTablesData();
+  }
+
+  public async getReservations(tableNumber: number): Promise<Reservation[]> {
+    return this.getReservationsData().filter((r) => r.table_number === tableNumber);
+  }
+
+  public async reserveNumber(
+    tableNumber: number,
+    num: number,
+    name: string,
+    phone: string,
+    browserToken: string
+  ): Promise<{ success: boolean; error?: string; data?: Reservation }> {
+    const tables = this.getTablesData();
+    const table = tables.find((t) => t.table_number === tableNumber);
+    if (!table || !table.is_open) {
+      return { success: false, error: 'This table is locked.' };
+    }
+
+    if (num < 1 || num > 42) {
+      return { success: false, error: 'Number must be between 1 and 42.' };
+    }
+
+    const reservations = this.getReservationsData();
+
+    // Check if duplicate number
+    const alreadyReserved = reservations.some(
+      (r) => r.table_number === tableNumber && r.number === num
+    );
+    if (alreadyReserved) {
+      return { success: false, error: 'This number is already reserved.' };
+    }
+
+    // Check if nickname duplicate in SAME table
+    const normalizedName = name.trim().toLowerCase();
+    const nicknameExists = reservations.some(
+      (r) => r.table_number === tableNumber && r.normalized_name === normalizedName
+    );
+    if (nicknameExists) {
+      return { success: false, error: 'This nickname already exists in this table.' };
+    }
+
+    // Check if user already booked this specific number
+    const userHasNumberCheck = reservations.some(
+      (r) => r.table_number === tableNumber && r.number === num && r.browser_token === browserToken
+    );
+    if (userHasNumberCheck) {
+      return { success: false, error: 'You have already reserved this exact number.' };
+    }
+
+    const newRes: Reservation = {
+      id: `res-uuid-${Math.random().toString(36).substring(2, 9)}`,
+      table_number: tableNumber,
+      number: num,
+      name: name.trim(),
+      normalized_name: normalizedName,
+      phone: phone.trim(),
+      status: 'pending',
+      price: 3,
+      created_at: new Date().toISOString(),
+      paid_at: null,
+      browser_token: browserToken,
+    };
+
+    reservations.push(newRes);
+    this.saveReservationsData(reservations);
+
+    return { success: true, data: newRes };
+  }
+
+  public async checkAvailability(
+    tableNumber: number,
+    nums: number[]
+  ): Promise<{ data?: number[]; error?: any }> {
+    const reservations = this.getReservationsData();
+    const taken = reservations
+      .filter((r) => r.table_number === tableNumber && nums.includes(r.number))
+      .map((r) => r.number);
+    return { data: taken };
+  }
+
+  public async reserveNumbers(
+    tableNumber: number,
+    nums: number[],
+    name: string,
+    phone: string,
+    browserToken: string
+  ): Promise<{ success: boolean; error?: string; takenNumbers?: number[] }> {
+    const tables = this.getTablesData();
+    const table = tables.find((t) => t.table_number === tableNumber);
+    if (!table || !table.is_open) {
+      return { success: false, error: 'This table is locked.' };
+    }
+
+    if (nums.some((num) => num < 1 || num > 42)) {
+      return { success: false, error: 'Numbers must be between 1 and 42.' };
+    }
+
+    const reservations = this.getReservationsData();
+
+    // Re-check if any selected number became unavailable
+    const taken = reservations
+      .filter((r) => r.table_number === tableNumber && nums.includes(r.number))
+      .map((r) => r.number);
+
+    if (taken.length > 0) {
+      return {
+        success: false,
+        error: 'Some numbers were already taken. Please review your selection.',
+        takenNumbers: taken,
+      };
+    }
+
+    // Check if nickname duplicate in SAME table
+    const normalizedName = name.trim().toLowerCase();
+    const nicknameExists = reservations.some(
+      (r) => r.table_number === tableNumber && r.normalized_name === normalizedName
+    );
+    if (nicknameExists) {
+      return { success: false, error: 'This nickname already exists in this table.' };
+    }
+
+    const groupId = 'group-' + Math.random().toString(36).substring(2, 11);
+
+    const newReservations = nums.map((num) => ({
+      id: `res-uuid-${Math.random().toString(36).substring(2, 9)}`,
+      table_number: tableNumber,
+      number: num,
+      name: name.trim(),
+      normalized_name: normalizedName,
+      phone: phone.trim(),
+      status: 'pending' as const,
+      price: 3,
+      created_at: new Date().toISOString(),
+      paid_at: null,
+      browser_token: browserToken,
+      reservation_group_id: groupId,
+    }));
+
+    reservations.push(...newReservations);
+    this.saveReservationsData(reservations);
+
+    return { success: true };
+  }
+
+  public async cancelReservation(
+    tableNumber: number,
+    num: number,
+    browserToken: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const reservations = this.getReservationsData();
+    const index = reservations.findIndex(
+      (r) => r.table_number === tableNumber && r.number === num
+    );
+
+    if (index === -1) {
+      return { success: false, error: 'Reservation not found.' };
+    }
+
+    const res = reservations[index];
+    if (res.status === 'paid') {
+      return { success: false, error: 'Paid reservations cannot be cancelled.' };
+    }
+
+    if (res.browser_token !== browserToken) {
+      return { success: false, error: 'You can only cancel your own pending reservations.' };
+    }
+
+    reservations.splice(index, 1);
+    this.saveReservationsData(reservations);
+    return { success: true };
+  }
+
+  // Admin section
+
+  public async verifyAdminPin(pin: string): Promise<boolean> {
+    return pin === adminPinDev;
+  }
+
+  public async setTableStatus(tableNumber: number, isOpen: boolean): Promise<boolean> {
+    const tables = this.getTablesData();
+    const index = tables.findIndex((t) => t.table_number === tableNumber);
+    if (index !== -1) {
+      tables[index].is_open = isOpen;
+      this.saveTablesData(tables);
+      return true;
+    }
+    return false;
+  }
+
+  public async setTableDrawDate(tableNumber: number, drawDate: string | null): Promise<boolean> {
+    const tables = this.getTablesData();
+    const index = tables.findIndex((t) => t.table_number === tableNumber);
+    if (index !== -1) {
+      tables[index].draw_date = drawDate;
+      this.saveTablesData(tables);
+      return true;
+    }
+    return false;
+  }
+
+  public async confirmPayment(
+    tableNumber: number,
+    num: number
+  ): Promise<{ success: boolean; error?: string }> {
+    const reservations = this.getReservationsData();
+    const index = reservations.findIndex(
+      (r) => r.table_number === tableNumber && r.number === num
+    );
+
+    if (index === -1) {
+      return { success: false, error: 'Reservation not found.' };
+    }
+
+    const res = reservations[index];
+    if (res.status === 'paid') {
+      return { success: true }; // Already paid
+    }
+
+    res.status = 'paid';
+    res.paid_at = new Date().toISOString();
+    this.saveReservationsData(reservations);
+
+    // Track in profit ledger
+    const ledger = this.getProfitData();
+    const newProfit: ProfitEntry = {
+      id: `profit-uuid-${Math.random().toString(36).substring(2, 9)}`,
+      table_number: tableNumber,
+      number: num,
+      amount: res.price,
+      type: 'paid',
+      created_at: new Date().toISOString(),
+    };
+    ledger.push(newProfit);
+    this.saveProfitData(ledger);
+
+    return { success: true };
+  }
+
+  public async resetNumber(
+    tableNumber: number,
+    num: number
+  ): Promise<{ success: boolean; error?: string }> {
+    const reservations = this.getReservationsData();
+    const index = reservations.findIndex(
+      (r) => r.table_number === tableNumber && r.number === num
+    );
+
+    if (index === -1) {
+      return { success: false, error: 'No reservation exists for this number.' };
+    }
+
+    reservations.splice(index, 1);
+    this.saveReservationsData(reservations);
+
+    // Delete associated profit entry for this active table number if existing
+    const profit = this.getProfitData();
+    const filteredProfit = profit.filter(
+      (p) => !(p.table_number === tableNumber && p.number === num)
+    );
+    this.saveProfitData(filteredProfit);
+
+    return { success: true };
+  }
+
+  public async clearAllNumbers(tableNumber: number): Promise<boolean> {
+    const reservations = this.getReservationsData();
+    const cleared = reservations.filter((r) => r.table_number !== tableNumber);
+    this.saveReservationsData(cleared);
+    return true;
+  }
+
+  public async getStats(): Promise<AppStats> {
+    const reservations = this.getReservationsData();
+    const ledger = this.getProfitData();
+    const tables = this.getTablesData();
+
+    // Total Profit (from all time ledger payments)
+    const totalProfit = ledger.reduce((sum, p) => sum + p.amount, 0);
+
+    // Compute This Week Profit (since Monday)
+    const getMondayOfCurrentWeek = () => {
+      const d = new Date();
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+      const monday = new Date(d.setDate(diff));
+      monday.setHours(0, 0, 0, 0);
+      return monday;
+    };
+    const monday = getMondayOfCurrentWeek();
+    const thisWeekProfit = ledger
+      .filter((p) => new Date(p.created_at) >= monday)
+      .reduce((sum, p) => sum + p.amount, 0);
+
+    // Combined counts
+    const pendingReservations = reservations.filter((r) => r.status === 'pending');
+    const confirmedReservations = reservations.filter((r) => r.status === 'paid');
+
+    const pendingCount = pendingReservations.length;
+    const pendingAmount = pendingReservations.length * 3;
+    const confirmedCount = confirmedReservations.length;
+    const confirmedAmount = confirmedReservations.length * 3;
+
+    // Per table stats
+    const tableStatsList: { [key: number]: any } = {};
+    for (let tNum = 1; tNum <= 10; tNum++) {
+      const tRes = reservations.filter((r) => r.table_number === tNum);
+      const tConf = tRes.filter((r) => r.status === 'paid');
+      const tPend = tRes.filter((r) => r.status === 'pending');
+
+      const isClosed = tRes.length === 42 && tConf.length === 42;
+
+      tableStatsList[tNum] = {
+        totalAmount: tRes.length * 3,
+        pendingAmount: tPend.length * 3,
+        confirmedAmount: tConf.length * 3,
+        isClosed,
+      };
+    }
+
+    return {
+      totalProfit,
+      thisWeekProfit,
+      pendingAmount,
+      pendingCount,
+      confirmedAmount,
+      confirmedCount,
+      tableStats: tableStatsList,
+    };
+  }
+
+  public subscribe(callback: TableCallback): () => void {
+    listeners.add(callback);
+    // Return unsubscribe function
+    return () => {
+      listeners.delete(callback);
+    };
+  }
+}
+
+export const localDb = new LocalDatabaseService();
+
+/**
+ * =========================================================================
+ * REAL SUPABASE WORKFLOWS
+ * =========================================================================
+ * Used when the user defines their real API connection values in .env.
+ */
+class SupabaseDatabaseService {
+  constructor() {
+    console.log('Using live Supabase database instance!');
+  }
+
+  public async getTables(): Promise<Table[]> {
+    if (!supabase) return localDb.getTables();
+    const { data, error } = await supabase
+      .from('tables')
+      .select('*')
+      .order('table_number', { ascending: true });
+
+    if (error) {
+      console.error('Supabase getTables error, using mock:', error);
+      return localDb.getTables();
+    }
+
+    if (!data || data.length === 0) {
+      // Auto seed first table to make preview run successfully before manual admin seeding
+      const initial: Table[] = Array.from({ length: 10 }, (_, i) => ({
+        id: `table-uuid-${i + 1}`,
+        table_number: i + 1,
+        is_open: i === 0,
+        draw_date: null,
+        created_at: new Date().toISOString(),
+      }));
+      for (const t of initial) {
+        await supabase.from('tables').upsert({
+          table_number: t.table_number,
+          is_open: t.is_open,
+          draw_date: t.draw_date,
+        });
+      }
+      return initial;
+    }
+
+    return data as Table[];
+  }
+
+  public async getReservations(tableNumber: number): Promise<Reservation[]> {
+    if (!supabase) return localDb.getReservations(tableNumber);
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('*')
+      .eq('table_number', tableNumber);
+
+    if (error) {
+      console.error('Supabase getReservations error:', error);
+      return localDb.getReservations(tableNumber);
+    }
+    return data as Reservation[];
+  }
+
+  public async reserveNumber(
+    tableNumber: number,
+    num: number,
+    name: string,
+    phone: string,
+    browserToken: string
+  ): Promise<{ success: boolean; error?: string; data?: Reservation }> {
+    if (!supabase) {
+      return localDb.reserveNumber(tableNumber, num, name, phone, browserToken);
+    }
+
+    // Step 1: Pre-validation using client rules
+    const tables = await this.getTables();
+    const table = tables.find((t) => t.table_number === tableNumber);
+    if (!table || !table.is_open) {
+      return { success: false, error: 'This table is locked.' };
+    }
+
+    const currentReservations = await this.getReservations(tableNumber);
+
+    // Duplicate number check
+    if (currentReservations.some((r) => r.number === num)) {
+      return { success: false, error: 'This number is already reserved.' };
+    }
+
+    // Duplicate nickname inside table
+    const normalized = name.trim().toLowerCase();
+    if (currentReservations.some((r) => r.normalized_name === normalized)) {
+      return { success: false, error: 'This nickname already exists in this table.' };
+    }
+
+    // Insert reservation
+    const newRes = {
+      table_number: tableNumber,
+      number: num,
+      name: name.trim(),
+      normalized_name: normalized,
+      phone: phone.trim(),
+      status: 'pending',
+      price: 3,
+      browser_token: browserToken,
+    };
+
+    const { data, error } = await supabase
+      .from('reservations')
+      .insert(newRes)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Supabase reservation error:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data: data as Reservation };
+  }
+
+  public async checkAvailability(
+    tableNumber: number,
+    nums: number[]
+  ): Promise<{ data?: number[]; error?: any }> {
+    if (!supabase) return localDb.checkAvailability(tableNumber, nums);
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('number')
+      .eq('table_number', tableNumber)
+      .in('number', nums)
+      .in('status', ['reserved', 'confirmed', 'pending', 'paid']);
+
+    if (error) {
+      console.error('Supabase checkAvailability error:', error);
+      return { error };
+    }
+    const taken = data?.map((row) => row.number) || [];
+    return { data: taken };
+  }
+
+  public async reserveNumbers(
+    tableNumber: number,
+    nums: number[],
+    name: string,
+    phone: string,
+    browserToken: string
+  ): Promise<{ success: boolean; error?: string; takenNumbers?: number[] }> {
+    if (!supabase) {
+      return localDb.reserveNumbers(tableNumber, nums, name, phone, browserToken);
+    }
+
+    // Pre-validation checking if table is open
+    const tables = await this.getTables();
+    const table = tables.find((t) => t.table_number === tableNumber);
+    if (!table || !table.is_open) {
+      return { success: false, error: 'This table is locked.' };
+    }
+
+    // Fetch the latest reservations to perform a fresh check
+    const currentReservations = await this.getReservations(tableNumber);
+
+    const taken = currentReservations
+      .filter((r) => nums.includes(r.number))
+      .map((r) => r.number);
+
+    if (taken.length > 0) {
+      return {
+        success: false,
+        error: 'Some numbers were already taken. Please review your selection.',
+        takenNumbers: taken,
+      };
+    }
+
+    // Duplicate nickname check
+    const normalized = name.trim().toLowerCase();
+    if (currentReservations.some((r) => r.normalized_name === normalized)) {
+      return { success: false, error: 'This nickname already exists in this table.' };
+    }
+
+    const reservationGroupId = crypto.randomUUID ? crypto.randomUUID() : 'group-' + Math.random().toString(36).substring(2, 11);
+
+    const newReservations = nums.map((num) => ({
+      table_number: tableNumber,
+      number: num,
+      name: name.trim(),
+      normalized_name: normalized,
+      phone: phone.trim(),
+      nickname: name.trim(),
+      contact_phone: phone.trim(),
+      status: 'pending',
+      price: 3,
+      browser_token: browserToken,
+      reservation_group_id: reservationGroupId,
+    }));
+
+    const { error } = await supabase
+      .from('reservations')
+      .insert(newReservations);
+
+    if (error) {
+      console.error('Supabase batch reservation error:', error);
+      console.error('Reservation rows payload:', newReservations);
+      const errorMsg = error.message || '';
+      if (
+        errorMsg.toLowerCase().includes('reservation_group_id') ||
+        errorMsg.toLowerCase().includes('column') ||
+        errorMsg.toLowerCase().includes('schema cache') ||
+        errorMsg.toLowerCase().includes('not found') ||
+        errorMsg.toLowerCase().includes('does not exist')
+      ) {
+        return {
+          success: false,
+          error: 'Reservation system needs an update. Please contact admin.',
+        };
+      }
+      return { success: false, error: errorMsg };
+    }
+
+    return { success: true };
+  }
+
+  public async cancelReservation(
+    tableNumber: number,
+    num: number,
+    browserToken: string
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!supabase) {
+      return localDb.cancelReservation(tableNumber, num, browserToken);
+    }
+
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('*')
+      .eq('table_number', tableNumber)
+      .eq('number', num)
+      .single();
+
+    if (error || !data) {
+      return { success: false, error: 'Reservation not found.' };
+    }
+
+    const res = data as Reservation;
+    if (res.status === 'paid') {
+      return { success: false, error: 'Paid reservations cannot be cancelled.' };
+    }
+
+    if (res.browser_token !== browserToken) {
+      return { success: false, error: 'You can only cancel your own pending reservations.' };
+    }
+
+    const { error: delError } = await supabase
+      .from('reservations')
+      .delete()
+      .eq('table_number', tableNumber)
+      .eq('number', num);
+
+    if (delError) {
+      return { success: false, error: delError.message };
+    }
+
+    return { success: true };
+  }
+
+  public async verifyAdminPin(pin: string): Promise<boolean> {
+    // For local dev and easy setup, check PIN via RPC or Edge Functions.
+    // If not set up, fall back to comparing pin to ENV VITE_ADMIN_PIN.
+    if (!supabase) return pin === adminPinDev;
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('verify-admin-pin', {
+        body: { pin },
+      });
+      if (!error && data && typeof data.valid === 'boolean') {
+        return data.valid;
+      }
+    } catch {
+      // Fallback
+    }
+    return pin === adminPinDev;
+  }
+
+  public async setTableStatus(tableNumber: number, isOpen: boolean): Promise<boolean> {
+    if (!supabase) return localDb.setTableStatus(tableNumber, isOpen);
+    const { error } = await supabase
+      .from('tables')
+      .update({ is_open: isOpen })
+      .eq('table_number', tableNumber);
+    return !error;
+  }
+
+  public async setTableDrawDate(tableNumber: number, drawDate: string | null): Promise<boolean> {
+    if (!supabase) return localDb.setTableDrawDate(tableNumber, drawDate);
+    const { error } = await supabase
+      .from('tables')
+      .update({ draw_date: drawDate })
+      .eq('table_number', tableNumber);
+    return !error;
+  }
+
+  public async confirmPayment(
+    tableNumber: number,
+    num: number
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!supabase) return localDb.confirmPayment(tableNumber, num);
+
+    // Update status to paid and update paid_at
+    const { data: resData, error: loadError } = await supabase
+      .from('reservations')
+      .select('*')
+      .eq('table_number', tableNumber)
+      .eq('number', num)
+      .single();
+
+    if (loadError || !resData) {
+      return { success: false, error: 'Reservation not found.' };
+    }
+
+    const res = resData as Reservation;
+
+    const { error: updateError } = await supabase
+      .from('reservations')
+      .update({ status: 'paid', paid_at: new Date().toISOString() })
+      .eq('table_number', tableNumber)
+      .eq('number', num);
+
+    if (updateError) {
+      return { success: false, error: updateError.message };
+    }
+
+    // Insert into profit ledger
+    const { error: ledgerError } = await supabase.from('profit_ledger').insert({
+      table_number: tableNumber,
+      number: num,
+      amount: res.price,
+      type: 'paid',
+    });
+
+    if (ledgerError) {
+      console.error('Ledger insert warning:', ledgerError);
+    }
+
+    return { success: true };
+  }
+
+  public async resetNumber(
+    tableNumber: number,
+    num: number
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!supabase) return localDb.resetNumber(tableNumber, num);
+
+    const { error: deleteError } = await supabase
+      .from('reservations')
+      .delete()
+      .eq('table_number', tableNumber)
+      .eq('number', num);
+
+    if (deleteError) {
+      return { success: false, error: deleteError.message };
+    }
+
+    // Clean active table ledger info
+    const { error: profitError } = await supabase
+      .from('profit_ledger')
+      .delete()
+      .eq('table_number', tableNumber)
+      .eq('number', num);
+
+    if (profitError) {
+      console.warn('Profit deletion error', profitError);
+    }
+
+    return { success: true };
+  }
+
+  public async clearAllNumbers(tableNumber: number): Promise<boolean> {
+    if (!supabase) return localDb.clearAllNumbers(tableNumber);
+    const { error } = await supabase
+      .from('reservations')
+      .delete()
+      .eq('table_number', tableNumber);
+    return !error;
+  }
+
+  public async getStats(): Promise<AppStats> {
+    if (!supabase) return localDb.getStats();
+
+    // Sum profit_ledger
+    const { data: ledger, error: lErr } = await supabase.from('profit_ledger').select('*');
+    // All reservations
+    const { data: reservations, error: rErr } = await supabase.from('reservations').select('*');
+    // All tables
+    const { data: tables, error: tErr } = await supabase.from('tables').select('*');
+
+    const cleanLedger = (ledger || []) as ProfitEntry[];
+    const cleanReservations = (reservations || []) as Reservation[];
+    const cleanTables = (tables || []) as Table[];
+
+    const totalProfit = cleanLedger.reduce((sum, p) => sum + Number(p.amount), 0);
+
+    // Since Monday
+    const getMondayOfCurrentWeek = () => {
+      const d = new Date();
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(d.setDate(diff));
+      monday.setHours(0, 0, 0, 0);
+      return monday;
+    };
+    const monday = getMondayOfCurrentWeek();
+    const thisWeekProfit = cleanLedger
+      .filter((p) => new Date(p.created_at) >= monday)
+      .reduce((sum, p) => sum + Number(p.amount), 0);
+
+    const pendingReservations = cleanReservations.filter((r) => r.status === 'pending');
+    const confirmedReservations = cleanReservations.filter((r) => r.status === 'paid');
+
+    const pendingCount = pendingReservations.length;
+    const pendingAmount = pendingReservations.length * 3;
+    const confirmedCount = confirmedReservations.length;
+    const confirmedAmount = confirmedReservations.length * 3;
+
+    // Per table stats
+    const tableStatsList: { [key: number]: any } = {};
+    for (let tNum = 1; tNum <= 10; tNum++) {
+      const tRes = cleanReservations.filter((r) => r.table_number === tNum);
+      const tConf = tRes.filter((r) => r.status === 'paid');
+      const tPend = tRes.filter((r) => r.status === 'pending');
+
+      const isClosed = tRes.length === 42 && tConf.length === 42;
+
+      tableStatsList[tNum] = {
+        totalAmount: tRes.length * 3,
+        pendingAmount: tPend.length * 3,
+        confirmedAmount: tConf.length * 3,
+        isClosed,
+      };
+    }
+
+    return {
+      totalProfit,
+      thisWeekProfit,
+      pendingAmount,
+      pendingCount,
+      confirmedAmount,
+      confirmedCount,
+      tableStats: tableStatsList,
+    };
+  }
+
+  public subscribe(callback: TableCallback): () => void {
+    if (!supabase) return localDb.subscribe(callback);
+
+    // Listen to changes on tables, reservations & profit_ledger in real time
+    const channel = supabase
+      .channel('table-reservation-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reservations' },
+        () => callback()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tables' },
+        () => callback()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profit_ledger' },
+        () => callback()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }
+}
+
+export const db = isRealSupabaseConfigured
+  ? new SupabaseDatabaseService()
+  : localDb;
+
